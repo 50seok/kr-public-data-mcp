@@ -248,22 +248,24 @@ from mcp.server.mcpserver import MCPServer  # noqa: E402  (API_KEY 체크가 imp
 mcp = MCPServer("kr-public-data-mcp")
 
 
+# ponytail: 실측으로 확인된 버그 — 파라미터명이 한글(지역/이름)이면 Anthropic 도구 스키마
+# 검증을 통과 못 해 도구 자체가 목록에서 빠진다. 파라미터는 영문, 설명만 한글로 둔다.
 @mcp.tool()
-def get_weather(지역: str) -> str:
-    """한국 지역의 실시간 날씨(기온·습도·강수)를 조회한다. 예: 지역="성남" """
-    return _safe(_get_weather_cached, 지역)
-
-
-@mcp.tool()
-def get_air_quality(지역: str) -> str:
-    """한국 지역의 실시간 미세먼지(PM10/PM2.5)를 조회한다. 예: 지역="성남" """
-    return _safe(_get_air_quality_cached, 지역)
+def get_weather(region: str) -> str:
+    """한국 지역의 실시간 날씨(기온·습도·강수)를 조회한다. 예: region="성남" """
+    return _safe(_get_weather_cached, region)
 
 
 @mcp.tool()
-def search_station(이름: str) -> str:
-    """이름/주소 일부로 대기오염 측정소를 검색한다. 예: 이름="성남" """
-    return _safe(_search_station_cached, 이름)
+def get_air_quality(region: str) -> str:
+    """한국 지역의 실시간 미세먼지(PM10/PM2.5)를 조회한다. 예: region="성남" """
+    return _safe(_get_air_quality_cached, region)
+
+
+@mcp.tool()
+def search_station(name: str) -> str:
+    """이름/주소 일부로 대기오염 측정소를 검색한다. 예: name="성남" """
+    return _safe(_search_station_cached, name)
 
 
 def _selfcheck() -> None:
