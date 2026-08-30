@@ -9,6 +9,7 @@ import os
 import sys
 import time
 from functools import lru_cache
+from pathlib import Path
 
 import httpx
 import requests
@@ -18,7 +19,8 @@ from dotenv import load_dotenv
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
-load_dotenv()
+# claude mcp add로 등록되면 실행 cwd가 이 파일 위치와 다를 수 있다 — 스크립트 옆 .env를 명시적으로 찾는다.
+load_dotenv(Path(__file__).parent / ".env")
 
 API_KEY = os.environ.get("PUBLIC_DATA_API_KEY")
 if not API_KEY:
