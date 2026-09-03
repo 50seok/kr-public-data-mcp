@@ -146,11 +146,17 @@ def upsert_comment(repo, pr, body, existing):
         gh(["api", "-X", "POST", "repos/%s/issues/%d/comments" % (repo, pr), "--input", "-"], stdin=payload)
 
 
-def set_labels(repo, pr, want):
-    """want 에 있는 라벨만 남긴다. 재실행으로 등급이 사라지면 라벨도 뗀다."""
+def ensure_labels(repo):
+    """P1/P2 라벨이 레포에 없으면 만든다. create_followup()이 라벨을 참조하기 전에
+    반드시 먼저 호출해야 한다 — 순서가 바뀌면 'label not found'로 이슈 생성이 실패한다."""
     for name, color in ((P1_LABEL, "d73a4a"), (P2_LABEL, "fbca04")):
         subprocess.run(["gh", "label", "create", name, "--color", color, "--force", "--repo", repo],
                        capture_output=True, text=True)
+
+
+def set_labels(repo, pr, want):
+    """want 에 있는 라벨만 남긴다. 재실행으로 등급이 사라지면 라벨도 뗀다."""
+    for name in (P1_LABEL, P2_LABEL):
         flag = "--add-label" if name in want else "--remove-label"
         subprocess.run(["gh", "issue", "edit", str(pr), flag, name, "--repo", repo],
                        capture_output=True, text=True)
@@ -180,6 +186,7 @@ def main():
         print("[pr-gate] 문서만 변경 — 리뷰 생략 (한도 소모 0)")
         return 0
 
+    ensure_labels(repo)
     existing = find_comment(repo, pr)
     prior = FOLLOWUP_RE.search(existing["body"]) if existing else None
     followup = int(prior.group(1)) if prior else None
