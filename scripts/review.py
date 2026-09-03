@@ -87,7 +87,9 @@ def run_review(cmd, diff):
         cmd, shell=True, input=PROMPT % diff, capture_output=True, text=True, encoding="utf-8", timeout=600
     )
     if r.returncode != 0:
-        raise RuntimeError("리뷰 명령 실패 (" + cmd + "): " + r.stderr.strip()[:500])
+        # 일부 CLI는 에러를 stderr가 아니라 stdout에 낸다 — 둘 다 남겨야 원인을 알 수 있다.
+        detail = (r.stderr.strip() or r.stdout.strip())[:500]
+        raise RuntimeError("리뷰 명령 실패 (exit %d, %s): %s" % (r.returncode, cmd, detail))
     return parse_review(r.stdout)
 
 
