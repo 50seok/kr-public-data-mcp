@@ -152,7 +152,30 @@ def find_comment(repo, pr):
     return None
 
 
+# 마지막 방어선: 리뷰 CLI가 diff 프롬프트 인젝션으로 무엇을 읽어냈든(자기 인증 토큰,
+# .git/config, 다른 파일), 그 값이 시크릿 모양이면 공개 코멘트로 나가기 직전에 지운다.
+# 입력 경로를 하나씩 막는 것(env 화이트리스트, persist-credentials)은 계속 새는 구멍이
+# 나올 수 있지만, 출력을 막으면 경로가 몇 개든 상관없다. (~/.claude/CLAUDE.md 시크릿
+# 스캔 패턴과 동일 계열: 주요 클라우드/깃 플랫폼 키 접두사 + 명시적 자격증명 대입)
+_SECRET_PATTERNS = [
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{10,}"),
+    re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
+    re.compile(r"gh[ps]_[A-Za-z0-9]{20,}"),
+    re.compile(r"glpat-[A-Za-z0-9_-]{15,}"),
+    re.compile(r"AKIA[0-9A-Z]{12,}"),
+    re.compile(r"AIza[0-9A-Za-z_-]{20,}"),
+    re.compile(r"(?i)(password|secret|token|api[_-]?key)['\"]?\s*[:=]\s*['\"]?[^\s'\"]{8,}"),
+]
+
+
+def redact_secrets(text):
+    for pat in _SECRET_PATTERNS:
+        text = pat.sub("[REDACTED]", text)
+    return text
+
+
 def upsert_comment(repo, pr, body, existing):
+    body = redact_secrets(body)
     payload = json.dumps({"body": body})
     if existing:
         gh(["api", "-X", "PATCH", "repos/%s/issues/comments/%d" % (repo, existing["id"]), "--input", "-"],
@@ -183,7 +206,7 @@ def create_followup(repo, pr, findings):
         body.append("- [ ] `%s:%s` — %s → %s" % (f.get("file", "?"), f.get("line", "?"),
                                                  f.get("why", ""), f.get("fix", "")))
     out = gh(["issue", "create", "--repo", repo, "--title", "P2 후속: PR #%d 리뷰 지적사항" % pr,
-              "--label", P2_LABEL, "--body-file", "-"], stdin="\n".join(body))
+              "--label", P2_LABEL, "--body-file", "-"], stdin=redact_secrets("\n".join(body)))
     m = re.search(r"/issues/(\d+)", out)
     return int(m.group(1)) if m else None
 

@@ -25,6 +25,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 이 워크플로우는 gh CLI가 GH_TOKEN env로 인증한다 — git 자격증명은 안 쓴다.
+          # 남겨두면 리뷰 CLI(cwd=저장소 루트, Read 허용)가 diff 프롬프트 인젝션으로
+          # .git/config를 읽어 토큰을 유출시킬 수 있는 경로가 하나 더 생긴다.
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
