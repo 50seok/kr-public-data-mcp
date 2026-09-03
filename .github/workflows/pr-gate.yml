@@ -1,0 +1,58 @@
+name: pr-gate
+
+# PR이 열리거나 커밋이 추가되면 diff를 에이전트 CLI에 태워 P1~P3 등급을 매긴다.
+# 머지는 이 워크플로우가 하지 않는다 — P1이 있으면 job이 실패하고, GitHub의
+# 네이티브 auto-merge가 required check 실패를 보고 알아서 머지를 보류한다.
+on:
+  pull_request:
+    branches: [dev]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+# 같은 PR의 실행을 직렬화한다. 취소하면 "후속 이슈는 생성됐는데 그 번호를 적은
+# 코멘트는 못 쓴" 상태로 끊길 수 있고, 재실행 시 이슈가 중복 생성된다.
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # fork PR은 시크릿이 넘어오지 않아 인증이 안 된다. 조용히 스킵.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 토큰 확인
+        env:
+          TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN 시크릿이 없습니다. 로컬에서 'claude setup-token' 실행 후 레포 시크릿에 등록하세요."
+            exit 1
+          fi
+
+      - name: Claude Code 설치
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: 리뷰
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # 리뷰 실행 명령. codex·grok CLI로 갈아끼우려면 이 두 줄만 바꾼다.
+          # ponytail: 읽기 도구만 허용해 리뷰어가 레포를 고치지 못하게 한다.
+          #           -p 모드는 권한 프롬프트에 답할 수 없어 bypass가 필요한데,
+          #           허용 도구가 읽기 전용이라 실질 위험이 없다.
+          REVIEW_CMD_SMALL: claude -p --model haiku --allowed-tools "Read,Grep,Glob" --permission-mode bypassPermissions
+          REVIEW_CMD_BIG: claude -p --model sonnet --allowed-tools "Read,Grep,Glob" --permission-mode bypassPermissions
+        run: python scripts/review.py

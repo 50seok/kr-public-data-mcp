@@ -135,7 +135,12 @@ def _kma_weather(nx: int, ny: int) -> dict:
     )
     resp.raise_for_status()
     body = resp.json()["response"]["body"]
-    items = body["items"]["item"]
+    # _search_station과 동일한 이유: 기상청 API도 HTTP 200에 에러 바디를 실어 보낼 때가
+    # 있다(서비스키 미승인, 파라미터 오류 등). 그때 "items"가 없거나 빈 문자열이라
+    # body["items"]["item"] 그대로 인덱싱하면 KeyError/TypeError가 _safe()를 뚫고 나간다.
+    items = (body.get("items") or {}).get("item") or []
+    if not items:
+        raise ValueError("기상청 API가 관측값을 반환하지 않았습니다 — 서비스키 승인 상태를 확인하세요")
     values = {it["category"]: it["obsrValue"] for it in items}
     out = {_CATEGORY_NAMES[k]: v for k, v in values.items() if k in _CATEGORY_NAMES}
     if "PTY" in values:
