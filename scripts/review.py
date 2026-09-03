@@ -82,9 +82,18 @@ def parse_review(raw):
     return {"summary": data.get("summary", ""), "findings": findings}
 
 
+# diff는 PR 작성자가 완전히 통제하는 신뢰할 수 없는 입력이다. 리뷰 CLI에게 Read 도구
+# 권한이 있으므로, 부모 환경을 그대로 물려주면 diff 안의 프롬프트 인젝션이 /proc/self/environ을
+# 읽게 만들어 GH_TOKEN 등을 findings 텍스트에 담아 공개 PR 코멘트로 유출시킬 수 있다.
+# 화이트리스트만 넘긴다 — GH_TOKEN은 절대 여기 포함하지 않는다.
+_REVIEW_ENV_ALLOWLIST = ("PATH", "HOME", "CLAUDE_CODE_OAUTH_TOKEN")
+
+
 def run_review(cmd, diff):
+    review_env = {k: os.environ[k] for k in _REVIEW_ENV_ALLOWLIST if k in os.environ}
     r = subprocess.run(
-        cmd, shell=True, input=PROMPT % diff, capture_output=True, text=True, encoding="utf-8", timeout=600
+        cmd, shell=True, input=PROMPT % diff, capture_output=True, text=True, encoding="utf-8",
+        timeout=600, env=review_env,
     )
     if r.returncode != 0:
         # 일부 CLI는 에러를 stderr가 아니라 stdout에 낸다 — 둘 다 남겨야 원인을 알 수 있다.
@@ -94,19 +103,25 @@ def run_review(cmd, diff):
 
 
 # --- 코멘트 렌더링 ---
+def _md_cell(s):
+    """모델이 생성한 텍스트를 마크다운 테이블 셀에 안전하게 넣는다.
+    '|'나 개행이 그대로 들어가면 테이블이 깨지고 뒤 행이 잘못 파싱된다."""
+    return str(s).replace("|", "\\|").replace("\r\n", " ").replace("\n", "<br>")
+
+
 def render(review, tier, cmd, sha, followup=None):
     counts = {g: sum(1 for f in review["findings"] if f["grade"] == g) for g in ("P1", "P2", "P3")}
     lines = [MARKER, "## 🤖 pr-gate 리뷰", ""]
     lines.append("**티어** `" + tier + "` · **명령** `" + cmd + "` · **커밋** `" + sha[:7] + "`")
     lines.append("")
     if review["summary"]:
-        lines += [review["summary"], ""]
+        lines += [_md_cell(review["summary"]).replace("<br>", "\n"), ""]
     if review["findings"]:
         lines += ["| 등급 | 위치 | 내용 |", "|---|---|---|"]
         for f in review["findings"]:
-            loc = str(f.get("file", "?")) + ":" + str(f.get("line", "?"))
+            loc = _md_cell(str(f.get("file", "?")) + ":" + str(f.get("line", "?")))
             lines.append("| **" + f["grade"] + "** | `" + loc + "` | "
-                         + str(f.get("why", "")) + "<br>→ " + str(f.get("fix", "")) + " |")
+                         + _md_cell(f.get("why", "")) + "<br>→ " + _md_cell(f.get("fix", "")) + " |")
         lines.append("")
     lines.append("**P1 %d · P2 %d · P3 %d**" % (counts["P1"], counts["P2"], counts["P3"]))
     if counts["P1"]:
